@@ -28,7 +28,7 @@ class ConfirmDialog:
         """Exibe uma caixa de diálogo de confirmação.
         Retorna True se o usuário clicar em 'Sim', False se clicar em 'Não'."""
         dialog = QMessageBox(parent)
-        dialog.setWindowTitle("Confirmação de Logout")
+        dialog.setWindowTitle("Confirmação")
         dialog.setText(message)
         dialog.setIcon(QMessageBox.Icon.Question)
         dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
