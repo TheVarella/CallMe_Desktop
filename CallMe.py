@@ -1,3 +1,4 @@
+import os
 import sys
 import sqlite3
 import hashlib
@@ -18,8 +19,18 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 
-DB_FILE = "chamados.db"
+def resource_path(relative_path):
+    """Permite acesso a arquivos em modo 'empacotado' com PyInstaller."""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
+# Caminhos para recursos
+db_path = resource_path("chamados.db")
+logo_path = resource_path("assets/logo.png")
+icone_path = resource_path("assets/logowindow.png")  # Corrigido para logowindow.png
+
+DB_FILE = "chamados.db"
 
 # ----------------------- Classe de Aviso Reutilizável -----------------------
 class ConfirmDialog:
@@ -35,9 +46,6 @@ class ConfirmDialog:
         dialog.setDefaultButton(QMessageBox.StandardButton.No)
         result = dialog.exec()
         return result == QMessageBox.StandardButton.Yes
-    
-
-
 
 # ----------------------- Banco de dados -----------------------
 class Database:
@@ -130,7 +138,6 @@ class Database:
         self.conn.commit()
         return c.lastrowid
 
-    # status_filter (usado pelo técnico)
     def get_tickets_for_user(self, user, status_filter=None):
         c = self.conn.cursor()
         if user['role'] == 'tecnico':
@@ -197,12 +204,11 @@ class Database:
 
         # Try to add logo if available
         try:
-            logo_path = "assets/logo.png"
-            # small width; keep aspect ratio
+            print(f"Tentando carregar logo em: {logo_path}")  # Debug
             logo = RLImage(logo_path, width=40*mm, height=15*mm)
             elements.append(logo)
-        except Exception:
-            # ignore if missing
+        except Exception as e:
+            print(f"Erro ao carregar logo: {e}")  # Debug
             pass
 
         elements.append(Spacer(1, 6))
@@ -238,7 +244,6 @@ class Database:
 
         # Column widths (approx, in points)
         page_width = A4[0] - (40*mm)  # A4 width minus left+right margins
-        # define relative widths: ID small, Title medium, Desc big, Status small, Creator small, Date small, Resolution medium
         col_widths = [
             30,                # ID
             90,                # Title
@@ -272,14 +277,7 @@ class Database:
         # Build PDF
         doc.build(elements)
 
-    # ----------------------
-    # Função para recuperação de senha
-    # ----------------------
     def update_password_by_email_re(self, email, re_val, new_password_hash):
-        """
-        Verifica se existe usuário com email e re correspondentes e atualiza a senha.
-        Retorna True se atualizado, False caso contrário.
-        """
         c = self.conn.cursor()
         c.execute("SELECT id, re FROM users WHERE email=?", (email,))
         row = c.fetchone()
@@ -313,8 +311,11 @@ class LoginWidget(QWidget):
 
         # Logo no topo
         logo_label = QLabel()
-        pixmap = QPixmap("assets/logo.png")
-        if not pixmap.isNull():
+        pixmap = QPixmap(logo_path)
+        if pixmap.isNull():
+            print(f"Erro: Não foi possível carregar a imagem em {logo_path}")  # Debug
+        else:
+            print(f"Imagem carregada com sucesso: {logo_path}")  # Debug
             pixmap = pixmap.scaledToWidth(120, Qt.TransformationMode.SmoothTransformation)
             logo_label.setPixmap(pixmap)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -375,23 +376,17 @@ class LoginWidget(QWidget):
         if user['password_hash'] != hash_password(pw):
             QMessageBox.warning(self, "Erro", "Senha incorreta.")
             return
-        # chama MainWindow para abrir as telas
         if user['role'] == 'tecnico':
             self.stacked.parent().open_tech_home(user)
         else:
             self.stacked.parent().open_employee_home(user)
 
     def on_forgot_password(self):
-        """Abre diálogo modal para recuperação de senha (email + RE + nova senha)."""
         dlg = PasswordRecoveryDialog(self.db, parent=self)
         dlg.exec()
 
 # ----------------------- Diálogo de Recuperação de Senha -----------------------
 class PasswordRecoveryDialog(QDialog):
-    """
-    Dialog único que pede: Email, RE, Nova senha, Confirmação.
-    Valida e atualiza a senha no banco.
-    """
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
         self.db = db
@@ -450,7 +445,6 @@ class PasswordRecoveryDialog(QDialog):
             QMessageBox.warning(self, "Erro", "As senhas não conferem.")
             return
 
-        # verifica se existe usuário com email e RE
         user = self.db.find_user_by_email(email)
         if not user:
             QMessageBox.warning(self, "Erro", "Email não cadastrado.")
@@ -459,7 +453,6 @@ class PasswordRecoveryDialog(QDialog):
             QMessageBox.warning(self, "Erro", "RE não corresponde ao usuário.")
             return
 
-        # atualiza senha
         new_hash = hash_password(pw)
         ok = self.db.update_password_by_email_re(email, reval, new_hash)
         if ok:
@@ -555,7 +548,6 @@ class TicketForm(QWidget):
         self.init_ui()
 
     def _apply_sizes(self):
-        # Controles maiores e consistentes
         self.title_edit.setFixedHeight(44)
         self.desc_edit.setFixedHeight(180)
         self.send_btn.setFixedHeight(48)
@@ -689,7 +681,6 @@ class ProfileForm(QWidget):
             return
         self.db.update_user(self.user['id'], name, email)
         QMessageBox.information(self, "Sucesso", "Perfil atualizado!")
-        # refresh local user data
         self.user = self.db.get_user_by_id(self.user['id'])
 
 # ----------------------- Employee Home (refatorado painel) -----------------------
@@ -721,8 +712,13 @@ class EmployeeHome(QWidget):
 
         top = QHBoxLayout()
         logo_label = QLabel()
-        pixmap = QPixmap("assets/logo.png").scaledToWidth(150, Qt.TransformationMode.SmoothTransformation)
-        logo_label.setPixmap(pixmap)
+        pixmap = QPixmap(logo_path)
+        if pixmap.isNull():
+            print(f"Erro: Não foi possível carregar a imagem em {logo_path}")  # Debug
+        else:
+            print(f"Imagem carregada com sucesso: {logo_path}")  # Debug
+            pixmap = pixmap.scaledToWidth(150, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
         top.addWidget(logo_label)
         top.addStretch()
         self.logout_btn = QPushButton("Sair")
@@ -739,7 +735,6 @@ class EmployeeHome(QWidget):
         panel_layout.setSpacing(16)
         root.addWidget(panel)
 
-        # welcome as attribute to allow updates after profile change
         self.welcome_label = QLabel(f"Bem-vindo, {self.user['name']}!")
         self.welcome_label.setStyleSheet("font-size:25px; font-weight:bold; color:#333;")
         self.welcome_label.setObjectName("welcome_label")
@@ -748,17 +743,14 @@ class EmployeeHome(QWidget):
         self.tabs = QTabWidget()
         panel_layout.addWidget(self.tabs)
 
-        # Meus Chamados (Employee) - includes description preview and clickable dialog
         self.tickets_tab = QWidget()
         tickets_layout = QVBoxLayout(self.tickets_tab)
         self.ticket_table = QTableWidget()
-        # Columns: ID, Title, Description (preview), Status (read-only), Date
         self.ticket_table.setColumnCount(5)
         self.ticket_table.setHorizontalHeaderLabels(["ID","Título","Descrição","Status","Data"])
         self.ticket_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         tickets_layout.addWidget(self.ticket_table)
 
-        # Add export buttons for employee view (CSV + PDF for their tickets)
         btn_row = QHBoxLayout()
         self.export_csv_btn_emp = QPushButton("Exportar CSV")
         self.export_pdf_btn_emp = QPushButton("Exportar PDF")
@@ -773,32 +765,24 @@ class EmployeeHome(QWidget):
         self.tabs.addTab(self.tickets_tab, "Meus Chamados")
         self._style_table()
 
-        # Abrir Chamado
         self.open_tab = QWidget()
         open_layout = QVBoxLayout(self.open_tab)
         self.ticket_form = TicketForm(self.db, self.user, self)
         open_layout.addWidget(self.ticket_form)
         self.tabs.addTab(self.open_tab, "Abrir Chamado")
 
-        # Perfil
         self.profile_tab = QWidget()
         profile_layout = QVBoxLayout(self.profile_tab)
         self.profile_form = ProfileForm(self.db, self.user)
         profile_layout.addWidget(self.profile_form)
         self.tabs.addTab(self.profile_tab, "Perfil")
 
-        # Connect profile save to update welcome label and local user
         self.profile_form.save_btn.clicked.connect(self.on_profile_saved)
-
-        # connect cell click to show full description
         self.ticket_table.cellClicked.connect(self.on_cell_clicked)
-
-        # connect export buttons
         self.export_csv_btn_emp.clicked.connect(self.export_csv_emp)
         self.export_pdf_btn_emp.clicked.connect(self.export_pdf_emp)
 
     def on_profile_saved(self):
-        # refresh user and update welcome label
         self.user = self.db.get_user_by_id(self.user['id'])
         self.profile_form.user = self.user
         self.welcome_label.setText(f"Bem-vindo, {self.user['name']}!")
@@ -806,12 +790,11 @@ class EmployeeHome(QWidget):
         self.load_tickets()
 
     def load_tickets(self):
-        # Mapeamento de cores para cada status
         status_colors = {
-            'Aberto': '#FF0000',           # Vermelho
-            'Aguardando Técnico': '#FFA500',  # Amarelo
-            'Em Atendimento': '#0055FF',   # Azul
-            'Finalizado': '#008000'        # Verde
+            'Aberto': '#FF0000',
+            'Aguardando Técnico': '#FFA500',
+            'Em Atendimento': '#0055FF',
+            'Finalizado': '#008000'
         }
         
         tickets = self.db.get_tickets_for_user(self.user)
@@ -819,29 +802,21 @@ class EmployeeHome(QWidget):
         for t in tickets:
             row = self.ticket_table.rowCount()
             self.ticket_table.insertRow(row)
-            # ID
             self.ticket_table.setItem(row,0,QTableWidgetItem(str(t['id'])))
-            # Title
             self.ticket_table.setItem(row,1,QTableWidgetItem(t['title']))
-            # Description preview
             desc_preview = t['description'][:120] + ("..." if len(t['description'])>120 else "")
             item_desc = QTableWidgetItem(desc_preview)
             item_desc.setData(Qt.ItemDataRole.UserRole, t['description'])
-            # make item not editable
             item_desc.setFlags(item_desc.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.ticket_table.setItem(row,2,item_desc)
-            # Status (read-only for employees)
             status_item = QTableWidgetItem(t['status'])
             status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            # Aplicar cor com base no status
-            status_color = status_colors.get(t['status'], '#000000')  # Preto padrão se status não mapeado
+            status_color = status_colors.get(t['status'], '#000000')
             status_item.setForeground(QColor(status_color))
             self.ticket_table.setItem(row,3,status_item)
-            # Created at
             self.ticket_table.setItem(row,4,QTableWidgetItem(t['created_at']))
 
     def on_cell_clicked(self, row, column):
-        # if description column clicked, open a dialog with full text
         if column == 2:
             item = self.ticket_table.item(row, column)
             if not item:
@@ -877,7 +852,6 @@ class EmployeeHome(QWidget):
                 QMessageBox.critical(self, "Erro", f"Falha ao gerar PDF: {e}")
 
     def logout(self):
-        # Mostrar diálogo de confirmação antes de sair
         if ConfirmDialog.ask(self, "Deseja realmente sair do sistema?"):
             self.stacked.setCurrentIndex(0)
 
@@ -910,19 +884,21 @@ class TechHome(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20,20,20,20)
 
-        # Topo com logo + botões
         top_layout = QHBoxLayout()
-
         logo_label = QLabel()
-        pixmap = QPixmap("assets/logo.png").scaledToWidth(150, Qt.TransformationMode.SmoothTransformation)
-        logo_label.setPixmap(pixmap)
+        pixmap = QPixmap(logo_path)
+        if pixmap.isNull():
+            print(f"Erro: Não foi possível carregar a imagem em {logo_path}")  # Debug
+        else:
+            print(f"Imagem carregada com sucesso: {logo_path}")  # Debug
+            pixmap = pixmap.scaledToWidth(150, Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(pixmap)
         top_layout.addWidget(logo_label)
 
         self.chamados_btn = QPushButton("Chamados")
         self.perfil_btn = QPushButton("Meu Perfil")
         self.logout_btn = QPushButton("Sair")
         self.logout_btn.setFixedWidth(100)
-        # style sizes
         for b in (self.chamados_btn, self.perfil_btn, self.logout_btn):
             b.setFixedHeight(36)
 
@@ -936,11 +912,9 @@ class TechHome(QWidget):
         self.perfil_btn.clicked.connect(self.show_perfil)
         self.logout_btn.clicked.connect(self.logout)
 
-        # Stack interno: Chamados e Perfil
         self.inner_stack = QStackedWidget()
         main_layout.addWidget(self.inner_stack)
 
-        # Chamados view
         self.chamados_widget = QWidget()
         chamados_layout = QVBoxLayout(self.chamados_widget)
 
@@ -948,7 +922,6 @@ class TechHome(QWidget):
         self.welcome_label.setStyleSheet("font-size:25px; font-weight:bold; color:#333;")
         chamados_layout.addWidget(self.welcome_label, alignment=Qt.AlignmentFlag.AlignLeft)
 
-        # filtro
         filter_layout = QHBoxLayout()
         lbl_filter = QLabel("Filtrar por status:")
         lbl_filter.setFixedWidth(120)
@@ -963,16 +936,13 @@ class TechHome(QWidget):
 
         self.filter_box.currentTextChanged.connect(self.apply_filter)
 
-        # tabela
         self.ticket_table = QTableWidget()
-        # corrected column count to match headers
         self.ticket_table.setColumnCount(7)
         self.ticket_table.setHorizontalHeaderLabels(["ID","Título","Descrição","Status","Criado por","Data","Resolução"])
         self.ticket_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         chamados_layout.addWidget(self.ticket_table)
         self._style_table()
 
-        # botoes (added PDF button next to CSV)
         btn_layout = QHBoxLayout()
         self.refresh_btn = QPushButton("Atualizar")
         self.export_btn = QPushButton("Exportar CSV")
@@ -990,16 +960,12 @@ class TechHome(QWidget):
         self.export_btn.clicked.connect(self.export_csv)
         self.export_pdf_btn.clicked.connect(self.export_pdf)
 
-        # NOTE: removed double-click edit; instead: inline status combobox and clickable description
         self.ticket_table.cellClicked.connect(self.on_cell_clicked)
 
         self.inner_stack.addWidget(self.chamados_widget)
 
-        # Perfil view (reutiliza ProfileForm)
         self.perfil_widget = ProfileForm(self.db, self.user)
-        # conectar o save do perfil para atualizar nome/welcome e local user
         self.perfil_widget.save_btn.clicked.connect(self.on_profile_saved)
-
         self.inner_stack.addWidget(self.perfil_widget)
 
         self.inner_stack.setCurrentWidget(self.chamados_widget)
@@ -1016,12 +982,11 @@ class TechHome(QWidget):
         self.load_tickets()
 
     def load_tickets(self):
-        # Mapeamento de cores para cada status
         status_colors = {
-            'Aberto': '#FF0000',           # Vermelho
-            'Aguardando Técnico': '#FFA500',  # Amarelo
-            'Em Atendimento': '#0055FF',   # Azul
-            'Finalizado': '#008000'        # Verde
+            'Aberto': '#FF0000',
+            'Aguardando Técnico': '#FFA500',
+            'Em Atendimento': '#0055FF',
+            'Finalizado': '#008000'
         }
         
         tickets = self.db.get_tickets_for_user(self.user, self.current_filter)
@@ -1029,35 +994,25 @@ class TechHome(QWidget):
         for t in tickets:
             row = self.ticket_table.rowCount()
             self.ticket_table.insertRow(row)
-            # ID
             self.ticket_table.setItem(row,0,QTableWidgetItem(str(t['id'])))
-            # Title
             self.ticket_table.setItem(row,1,QTableWidgetItem(t['title']))
-            # Description (short preview)
             desc_preview = t['description'][:120] + ("..." if len(t['description'])>120 else "")
             item_desc = QTableWidgetItem(desc_preview)
-            item_desc.setData(Qt.ItemDataRole.UserRole, t['description'])  # store full text on item
+            item_desc.setData(Qt.ItemDataRole.UserRole, t['description'])
             self.ticket_table.setItem(row,2,item_desc)
-            # Status: insert combobox widget
             status_combo = QComboBox()
             status_combo.addItems(self.STATUS_OPTIONS)
             status_combo.setCurrentText(t['status'])
-            # Aplicar cor ao QComboBox
-            status_color = status_colors.get(t['status'], '#000000')  # Preto padrão
+            status_color = status_colors.get(t['status'], '#000000')
             status_combo.setStyleSheet(f"color: {status_color};")
-            # store ticket id on combo for callback
             status_combo.tid = t['id']
             status_combo.currentTextChanged.connect(lambda s, combo=status_combo: self.on_status_changed(combo.tid, s))
             self.ticket_table.setCellWidget(row,3,status_combo)
-            # Creator
             self.ticket_table.setItem(row,4,QTableWidgetItem(t['creator_name']))
-            # Created at
             self.ticket_table.setItem(row,5,QTableWidgetItem(t['created_at']))
-            # Resolution
             self.ticket_table.setItem(row,6,QTableWidgetItem(t['resolution'] or ""))
 
     def on_status_changed(self, tid, status):
-        # when user marks as Finalizado, ask for resolution text
         resolution = None
         if status == 'Finalizado':
             dlg = QDialog(self)
@@ -1091,17 +1046,14 @@ class TechHome(QWidget):
             cancel.clicked.connect(on_cancel)
 
             if dlg.exec() != QDialog.DialogCode.Accepted:
-                # user cancelled: reload tickets to reset combo to previous value
                 self.load_tickets()
                 return
 
-        # persist to DB
         self.db.update_ticket_status(tid, status, resolution)
         QMessageBox.information(self, 'Sucesso', f'Status do chamado {tid} atualizado para "{status}".')
         self.load_tickets()
 
     def on_cell_clicked(self, row, column):
-        # if description column clicked, open a dialog with full text
         if column == 2:
             item = self.ticket_table.item(row, column)
             if not item:
@@ -1137,16 +1089,13 @@ class TechHome(QWidget):
                 QMessageBox.critical(self, "Erro", f"Falha ao gerar PDF: {e}")
 
     def on_profile_saved(self):
-        # refresh user and update welcome labels
         self.user = self.db.get_user_by_id(self.user['id'])
         self.perfil_widget.user = self.user
         self.welcome_label.setText(f"Bem-vindo, {self.user['name']}!")
         self.welcome_label.setStyleSheet("font-size:25px; font-weight:bold; color:#333;")
-        # also update employee welcome if needed elsewhere by reloading
         self.load_tickets()
 
     def logout(self):
-        # Mostrar diálogo de confirmação antes de sair
         if ConfirmDialog.ask(self, "Deseja realmente sair do sistema?"):
             self.stacked.setCurrentIndex(0)
 
@@ -1158,14 +1107,19 @@ class MainWindow(QWidget):
         self.resize(1200, 820)
 
         # Ícone da aplicação
-        self.setWindowIcon(QIcon("assets/logowindow.png"))
+        print(f"Tentando carregar ícone da janela em: {icone_path}")  # Debug
+        icon = QIcon(icone_path)
+        if icon.isNull():
+            print(f"Erro: Não foi possível carregar o ícone em {icone_path}")  # Debug
+        else:
+            print(f"Ícone carregado com sucesso: {icone_path}")  # Debug
+        self.setWindowIcon(icon)
 
         self.db = Database()
         self.stacked = QStackedWidget()
         self.layout = QVBoxLayout(self)
         self.layout.addWidget(self.stacked)
 
-        # Widgets
         self.login_widget = LoginWidget(self.db, self.stacked)
         self.register_widget = RegisterWidget(self.db, self.stacked)
         self.stacked.addWidget(self.login_widget)
@@ -1256,7 +1210,6 @@ class MainWindow(QWidget):
             font-size: 14px;
         }
 
-        /* small niceties */
         QTabBar::tab { padding: 8px 18px; font-size: 14px; }
         QTabBar::tab:selected { font-weight: 600; }
         """
