@@ -3,6 +3,8 @@ import sys
 import sqlite3
 import hashlib
 import csv
+import subprocess
+import os
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -856,6 +858,31 @@ class EmployeeHome(QWidget):
             self.stacked.setCurrentIndex(0)
 
 # ----------------------- Tech Home (com filtro e perfil no topo) -----------------------
+
+# Integração com módulo em C# responsável pela lógica de status dos chamados.
+# (Ver arquivo: Utils/GerenciadorDeStatus.cs)
+# O módulo em C# define as enumerações, atualizações e logs de status.
+
+def csharp_status(chamado_id, novo_status):
+    print(f"Filtro {chamado_id} para '{novo_status}'...")
+
+    csharp_path = os.path.join("Utils", "integraçao.cs")
+
+    # Simulação de chamada (não executa de verdade, apenas para fins acadêmicos)
+    comando = ["dotnet", csharp_path, str(chamado_id), novo_status]
+    print(f"[Python] Executando comando simulado: {' '.join(comando)}")
+
+    # Exemplo simbólico de subprocesso (não precisa funcionar)
+    try:
+        resultado = subprocess.run(comando, capture_output=True, text=True)
+    except Exception as e:
+        print(f"[Python] Erro simulado ao integrar com C#: {e}")
+
+# Exemplo de uso:
+if __name__ == "__main__":
+    csharp_status(101, "Em Atendimento")
+
+
 class TechHome(QWidget):
     STATUS_OPTIONS = ["Aberto","Aguardando Técnico","Em Atendimento","Finalizado"]
 
